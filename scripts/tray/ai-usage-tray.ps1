@@ -26,7 +26,8 @@ if (-not $createdNew -and -not $Snapshot) { exit 0 }
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-Add-Type -Namespace Native -Name Icons -MemberDefinition '[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool DestroyIcon(System.IntPtr handle);'
+. (Join-Path $PSScriptRoot 'TrayIcon.ps1')
+[void][Native.Metrics]::SetProcessDPIAware()  # so the icon is drawn at the real tray size
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 $logFile = Join-Path $projectRoot 'logs\ai-usage-tray.log'
@@ -38,34 +39,9 @@ function Write-TrayLog([string]$message) {
     } catch { }
 }
 
-$colors = @{
-    normal   = [System.Drawing.Color]::FromArgb(34, 160, 90)
-    warning  = [System.Drawing.Color]::FromArgb(224, 160, 0)
-    critical = [System.Drawing.Color]::FromArgb(205, 50, 50)
-    unknown  = [System.Drawing.Color]::FromArgb(130, 130, 130)
-}
-
 $script:view = $null
 $script:fetchedAt = [DateTime]::MinValue
 $script:currentHandle = [IntPtr]::Zero
-
-function New-TrayIcon($level, $minimum) {
-    $bitmap = New-Object System.Drawing.Bitmap 32, 32
-    $g = [System.Drawing.Graphics]::FromImage($bitmap)
-    $g.SmoothingMode = 'AntiAlias'
-    $g.TextRenderingHint = 'AntiAliasGridFit'
-    $brush = New-Object System.Drawing.SolidBrush $colors[$level]
-    $g.FillEllipse($brush, 1, 1, 30, 30)
-    $text = if ($null -eq $minimum) { '?' } else { "$minimum" }
-    $size = if ($text.Length -ge 3) { 11 } else { 15 }
-    $font = New-Object System.Drawing.Font 'Segoe UI', $size, ([System.Drawing.FontStyle]::Bold), ([System.Drawing.GraphicsUnit]::Pixel)
-    $format = New-Object System.Drawing.StringFormat
-    $format.Alignment = 'Center'; $format.LineAlignment = 'Center'
-    $g.DrawString($text, $font, [System.Drawing.Brushes]::White, (New-Object System.Drawing.RectangleF 0, 1, 32, 32), $format)
-    $handle = $bitmap.GetHicon()
-    $g.Dispose(); $bitmap.Dispose(); $brush.Dispose(); $font.Dispose()
-    [pscustomobject]@{ Icon = [System.Drawing.Icon]::FromHandle($handle); Handle = $handle }
-}
 
 # --- Popup -------------------------------------------------------------------
 $popup = New-Object System.Windows.Forms.Form
@@ -96,7 +72,7 @@ $buttons.WrapContents = $false
 
 function New-PopupButton($text) {
     $b = New-Object System.Windows.Forms.Button
-    $b.Text = $text; $b.AutoSize = $true; $b.FlatStyle = 'System'
+    $b.Text = $text; $b.AutoSize = $true; $b.FlatStyle = 'System'; $b.Font = New-Object System.Drawing.Font 'Segoe UI', 9
     $b
 }
 $btnRefresh = New-PopupButton 'Refresh now'
@@ -144,7 +120,7 @@ function Render-View {
     $old = $script:currentHandle
     $notify.Icon = $new.Icon
     $script:currentHandle = $new.Handle
-    if ($old -ne [IntPtr]::Zero) { [Native.Icons]::DestroyIcon($old) | Out-Null }
+    if ($old -ne [IntPtr]::Zero) { [Native.Metrics]::DestroyIcon($old) | Out-Null }
     $tip = if ($script:view.Reachable) { $script:view.Tooltip } else { 'AI Usage: tracker not reachable' }
     $notify.Text = $tip
     if ($popup.Visible) { Update-PopupLayout }
@@ -174,7 +150,7 @@ function Stop-Tray {
     $timer.Stop()
     $notify.Visible = $false
     $notify.Dispose()
-    if ($script:currentHandle -ne [IntPtr]::Zero) { [Native.Icons]::DestroyIcon($script:currentHandle) | Out-Null }
+    if ($script:currentHandle -ne [IntPtr]::Zero) { [Native.Metrics]::DestroyIcon($script:currentHandle) | Out-Null }
     $popup.Dispose()
     [System.Windows.Forms.Application]::ExitThread()
 }
@@ -202,7 +178,7 @@ try {
         $popup.DrawToBitmap($bitmap, (New-Object System.Drawing.Rectangle 0, 0, $popup.Width, $popup.Height))
         $bitmap.Save($Snapshot, [System.Drawing.Imaging.ImageFormat]::Png)
         $popup.Dispose()
-        if ($script:currentHandle -ne [IntPtr]::Zero) { [Native.Icons]::DestroyIcon($script:currentHandle) | Out-Null }
+        if ($script:currentHandle -ne [IntPtr]::Zero) { [Native.Metrics]::DestroyIcon($script:currentHandle) | Out-Null }
         return
     }
     $notify.Visible = $true
