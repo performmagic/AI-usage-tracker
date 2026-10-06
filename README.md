@@ -80,6 +80,10 @@ powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1
 
 This registers the `AI Usage Tracker` scheduled task, which runs `scripts\start-ai-usage-tracker.ps1` at every sign-in, and starts it right away. The same task runs whatever role `.env` selects, so on a laptop set up as a [collector](#2-set-up-a-collector-windows-laptop) it starts the collector. No administrator shell is needed. Rerun it whenever a script is renamed or moved; it also removes the old `Codex Usage Dashboard` task. To restart the tracker after a build, run `Start-ScheduledTask -TaskName "AI Usage Tracker"`; the start script replaces whatever tracker is already holding the port.
 
+### Windows tray
+
+The same scheduled task also starts a small tray icon that shows Codex and Claude quota (5-hour and 7-day, with reset times) without opening the dashboard. See [docs/TRAY.md](docs/TRAY.md).
+
 ## Test the interface without live data
 
 Edit `.env` and set:
