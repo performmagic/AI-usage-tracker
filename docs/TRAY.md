@@ -4,21 +4,21 @@ A small tray icon that shows Codex and Claude quota without opening the dashboar
 
 ```
 Codex
-  5-hour  100% remaining  ·  resets in 4h 59m
-  7-day    93% remaining  ·  resets in 5d 20h
+  5-hour  100% remaining  ?  resets in 4h 59m
+  7-day    93% remaining  ?  resets in 5d 20h
 
 Claude
-  5-hour   79% remaining  ·  resets in 4h 11m
-  7-day    68% remaining  ·  resets in 5d 12h
+  5-hour   79% remaining  ?  resets in 4h 11m
+  7-day    68% remaining  ?  resets in 5d 12h
 ```
 
 Left-click the icon for this panel (with **Refresh now**, **Open Dashboard**, **Exit**). Right-click shows the same actions as a menu. Hovering shows a one-line summary.
 
-The icon is a colored dot with the lowest remaining percentage: green above 30%, amber 10–30%, red below 10%, gray when nothing is current. There are no notifications or popups.
+The icon is a colored dot with the lowest remaining percentage: green above 30%, amber 10??0%, red below 10%, gray when nothing is current. There are no notifications or popups.
 
 ## How it works
 
-The tray is only a viewer. It reads the tracker's local API (`/api/health`, `/api/overview`) about once a minute and never contacts Codex or Claude itself. The tracker keeps polling on its own schedule. **Refresh now** calls the same `POST /api/refresh` the dashboard uses. Nothing leaves the machine and the tray never reads credentials.
+The tray is only a viewer. It reads the tracker's local API (`/api/health`, `/api/overview`) about once a minute and never contacts Codex or Claude itself. The tracker keeps polling on its own schedule. **Refresh now** calls the same `POST /api/refresh` the dashboard uses. Nothing leaves the machine. The tray never reads or logs a token; the only credential field it looks at is the expiry time (see [Claude sign-in renewal](#claude-sign-in-renewal)).
 
 It is plain PowerShell with Windows Forms: no new npm dependency and no changes to the server or dashboard. The files are in `scripts/tray/`.
 
@@ -26,7 +26,24 @@ It is plain PowerShell with Windows Forms: no new npm dependency and no changes 
 
 A window is only shown as a percentage when the provider is connected, the window has not already reset, and the tracker observed it in the last 10 minutes. Otherwise the row says `Stale` or `Unavailable` plus the last valid update time. If the tracker is not running, every row says `Unavailable`.
 
-When the Claude sign-in has expired, the tray adds: *Run Claude CLI once to refresh authentication.* Claude's token lasts about 8 hours and only the terminal `claude` command renews the stored copy, so this appears if you have not used the CLI for a while. The tray never refreshes it for you.
+When the Claude sign-in has expired, the tray adds: *Run Claude CLI once to refresh authentication.* Claude's stored sign-in lasts about 8 hours and the tracker only reads it, so it goes stale until something renews it. The tray can do that for you, see below.
+
+## Claude sign-in renewal
+
+Starting the Claude Code CLI and exiting it renews the stored sign-in without sending any prompt. The tray does exactly that, in a hidden window, only when it is needed:
+
+- **Automatic**: the stored sign-in has already expired **and** Claude was used after it expired (a thread in the tracker's own index has a later update time). Nothing happens while the sign-in is valid or while you are not using Claude.
+- **Refresh now**: if the sign-in has expired, it renews it at once, even with no recent activity. A valid sign-in is never touched.
+- It sends only `/exit`, so there is no model usage, no conversation transcript, and (the child process runs with `CLAUDE_CODE_SKIP_PROMPT_HISTORY=1`) no prompt-history entry. The keys go to the console of the process the tray started, not to whatever window is in front. It runs in the tracker's project folder, which Claude Code must already trust.
+- Success means the new expiry is later than the old one and in the future, not just that the CLI exited cleanly.
+- One attempt at a time. After a failure there is a 30 minute cooldown. After three failures in a row automatic renewal pauses until the tray restarts (**Refresh now** still works) and the popup says why.
+- Before and after, `~/.claude.json` must exist and parse as JSON. If not, the tray stops and reports it. It never edits, restores or repairs Claude's files.
+- Each attempt is logged to `logs\ai-usage-tray.log` with duration, exit code, old and new expiry and the Claude Code version. No token is read or logged.
+- A timed-out CLI (30 seconds) is killed, only the process the tray started.
+
+Things the Claude CLI itself does on every start and the tray cannot prevent: it rewrites `~/.claude.json` and adds a backup under `~/.claude/backups` (the CLI keeps about five). The first ever CLI start also downloads the official plugin list (about 13 MB) once.
+
+No scheduled task is added and nothing runs on a timer to start Claude.
 
 ## Start, stop, restart
 
@@ -34,7 +51,7 @@ The existing `AI Usage Tracker` scheduled task now starts the tracker and then t
 
 | Action | How |
 |---|---|
-| Stop the tray | Tray menu → **Exit** |
+| Stop the tray | Tray menu ??**Exit** |
 | Start/restart both | `Start-ScheduledTask -TaskName "AI Usage Tracker"` (restarts the tracker; starts the tray if it is not running) |
 | Start only the tray | `powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Sta -File scripts\tray\ai-usage-tray.ps1` |
 | Start the tracker without the tray | `scripts\start-ai-usage-tracker.ps1 -NoTray` |
@@ -70,6 +87,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\tray\tests.ps1
 ```
 
 Runs the tray logic against a fake tracker API (needs Node): both providers, one unavailable, stale and expired data, tracker down and back, manual refresh, level thresholds.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\tray\tests-refresh.ps1
+```
+
+Runs the Claude sign-in renewal against a fake Claude CLI (a small Node program that reads keystrokes from a real hidden console): valid, expired without and with activity, Refresh now, concurrent triggers, timeout, no-extension, repeated failures, and invalid .claude.json. It never starts the real claude.
 
 ## Remove the tray
 

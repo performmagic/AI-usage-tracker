@@ -29,6 +29,18 @@ Add-Type -AssemblyName System.Drawing
 . (Join-Path $PSScriptRoot 'TrayIcon.ps1')
 [void][Native.Metrics]::SetProcessDPIAware()  # so the icon is drawn at the real tray size
 [System.Windows.Forms.Application]::EnableVisualStyles()
+. (Join-Path $PSScriptRoot 'ClaudeRefresh.ps1')
+$refreshCtx = New-ClaudeRefreshContext -ProjectRoot $projectRoot
+$pump = { [System.Windows.Forms.Application]::DoEvents() }
+
+# claude.exe is on the user's PATH normally; the installer's default folder is the fallback.
+function Resolve-ClaudeExe {
+    $found = Get-Command claude -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($found) { return $found.Source }
+    $fallback = Join-Path $env:USERPROFILE '.local\bin\claude.exe'
+    if (Test-Path $fallback) { return $fallback }
+    $null
+}
 
 $logFile = Join-Path $projectRoot 'logs\ai-usage-tray.log'
 function Write-TrayLog([string]$message) {
@@ -115,7 +127,7 @@ $notify.ContextMenuStrip = $menu
 
 function Render-View {
     # Recompute from cached data so countdowns and the stale rules use the current time.
-    $script:view = Get-TrayView -Data $script:data -Now ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -LastValid $lastValid
+    $script:view = Get-TrayView -Data $script:data -Now ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -LastValid $lastValid -ClaudeNote $refreshCtx.State.Note
     $new = New-TrayIcon $script:view.Level $script:view.Minimum
     $old = $script:currentHandle
     $notify.Icon = $new.Icon
@@ -129,6 +141,12 @@ function Render-View {
 function Update-Tray {
     try {
         $script:data = Get-TrayData -ApiBase $endpoint.Api -TimeoutSec 4
+        # Expired Claude sign-in + new Claude activity since: renew it (see ClaudeRefresh.ps1), then re-read.
+        if (-not $Snapshot) {
+            $refreshCtx.Exe = Resolve-ClaudeExe
+            $flow = Invoke-ClaudeRefreshFlow -Ctx $refreshCtx -ApiBase $endpoint.Api -Overview $script:data.Claude -Now ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -Pump $pump
+            if ($flow -and $flow.Attempted) { $script:data = Get-TrayData -ApiBase $endpoint.Api -TimeoutSec 4 }
+        }
         $script:fetchedAt = Get-Date
         Render-View
     } catch { Write-TrayLog "update failed: $($_.Exception.Message)" }
@@ -138,6 +156,9 @@ function Invoke-Refresh {
     try {
         $popup.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         $notify.Text = 'AI Usage: refreshing...'
+        # Manual path: if the Claude sign-in has expired, renew it now. The refresh below re-reads usage.
+        $refreshCtx.Exe = Resolve-ClaudeExe
+        $null = Invoke-ClaudeRefreshFlow -Ctx $refreshCtx -ApiBase $null -Overview $script:data.Claude -Now ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -Manual -Pump $pump
         Invoke-TrayRefresh -ApiBase $endpoint.Api
     } catch { Write-TrayLog "refresh failed: $($_.Exception.Message)" }
     finally { $popup.Cursor = [System.Windows.Forms.Cursors]::Default }

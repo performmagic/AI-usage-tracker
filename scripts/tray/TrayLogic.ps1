@@ -152,20 +152,22 @@ function Format-ProviderText {
     $lines = @($Provider.Title)
     foreach ($row in $Provider.Rows) { $lines += '  ' + (Format-RowText $row) }
     if ($Provider.AuthHint) { $lines += '  ' + $Provider.AuthHint }
+    if ($Provider.Note) { $lines += '  ' + $Provider.Note }
     $lines -join "`r`n"
 }
 
+# NotifyIcon.Text accepts at most 63 characters, so keep this compact: "Codex 5h 56% 7d 59% | Claude 5h 87% 7d 46%".
 function Format-TooltipText {
     param($Providers, $Level)
     $parts = foreach ($p in $Providers) {
         $bits = foreach ($r in $p.Rows) {
             $v = switch ($r.State) { 'Ok' { "$($r.Remaining)%" } 'Stale' { 'stale' } default { 'n/a' } }
-            "$($r.Label) $v"
+            "$($r.Label.Replace('-hour', 'h').Replace('-day', 'd')) $v"
         }
-        "$($p.Title): " + ($bits -join ', ')
+        "$($p.Title) " + ($bits -join ' ')
     }
-    $text = $parts -join "`n"
-    if ($text.Length -gt 120) { $text = $text.Substring(0, 120) }
+    $text = $parts -join ' | '
+    if ($text.Length -gt 63) { $text = $text.Substring(0, 63) }
     $text
 }
 
@@ -187,11 +189,12 @@ function Get-TrayData {
 
 # Build the whole view from fetched data. Pure apart from $LastValid bookkeeping.
 function Get-TrayView {
-    param($Data, [double]$Now, [hashtable]$LastValid)
+    param($Data, [double]$Now, [hashtable]$LastValid, [string]$ClaudeNote)
     $providers = @(
         (Get-ProviderView -Name 'codex' -Overview $Data.Codex -Health $Data.Health -Now $Now -LastValid $LastValid),
         (Get-ProviderView -Name 'claude' -Overview $Data.Claude -Health $Data.Health -Now $Now -LastValid $LastValid)
     )
+    foreach ($p in $providers) { $p | Add-Member -NotePropertyName Note -NotePropertyValue $(if ($p.Name -eq 'claude' -and $ClaudeNote) { $ClaudeNote } else { $null }) -Force }
     $level = Get-TrayLevel $providers
     [pscustomobject]@{
         Providers = $providers

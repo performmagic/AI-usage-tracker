@@ -51,6 +51,8 @@ try {
     Check 'level warning at 10' ((Get-Level 10) -eq 'warning')
     Check 'level critical below 10' ((Get-Level 9) -eq 'critical')
     Check 'level unknown without data' ((Get-Level $null) -eq 'unknown')
+    $empty = Get-TrayView -Data ([pscustomobject]@{ Health = $null; Codex = $null; Claude = $null; Reachable = $false }) -Now $now -LastValid @{}
+    Check 'tooltip fits the 63-character tray limit in the worst case' ($empty.Tooltip.Length -le 63)
 
     Write-Host 'Codex and Claude both have data'
     $v = Get-View
