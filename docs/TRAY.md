@@ -4,17 +4,17 @@ A small tray icon that shows Codex and Claude quota without opening the dashboar
 
 ```
 Codex
-  5-hour  100% remaining  ?  resets in 4h 59m
-  7-day    93% remaining  ?  resets in 5d 20h
+  5-hour  100% remaining  ·  resets in 4h 59m
+  7-day    93% remaining  ·  resets in 5d 20h
 
 Claude
-  5-hour   79% remaining  ?  resets in 4h 11m
-  7-day    68% remaining  ?  resets in 5d 12h
+  5-hour   79% remaining  ·  resets in 4h 11m
+  7-day    68% remaining  ·  resets in 5d 12h
 ```
 
 Left-click the icon for this panel (with **Refresh now**, **Open Dashboard**, **Exit**). Right-click shows the same actions as a menu. Hovering shows a one-line summary.
 
-The icon is a colored dot with the lowest remaining percentage: green above 30%, amber 10??0%, red below 10%, gray when nothing is current. There are no notifications or popups.
+The icon is a colored dot with the lowest remaining percentage: green above 30%, amber 10–30%, red below 10%, gray when nothing is current. There are no notifications or popups.
 
 ## How it works
 
@@ -51,7 +51,7 @@ The existing `AI Usage Tracker` scheduled task now starts the tracker and then t
 
 | Action | How |
 |---|---|
-| Stop the tray | Tray menu ??**Exit** |
+| Stop the tray | Tray menu → **Exit** |
 | Start/restart both | `Start-ScheduledTask -TaskName "AI Usage Tracker"` (restarts the tracker; starts the tray if it is not running) |
 | Start only the tray | `powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Sta -File scripts\tray\ai-usage-tray.ps1` |
 | Start the tracker without the tray | `scripts\start-ai-usage-tracker.ps1 -NoTray` |
